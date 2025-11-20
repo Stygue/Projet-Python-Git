@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-# 5 minutes en secondes (5 * 60 = 300)
+# 5 minutes en secondes
 DATA_CACHE_TTL = 300 
 
 @st.cache_data(ttl=DATA_CACHE_TTL)
