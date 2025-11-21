@@ -64,3 +64,76 @@ def render_quant_a_dashboard():
         df_processed = apply_sma_crossover(df, short_w, long_w)
         strategy_col = 'cum_return_sma'
         st.info(f"Strategy: Buy when SMA({short_w}) > SMA({long_w}).")
+ # --- 4. Visualization (Main Chart) ---
+    fig = go.Figure()
+
+    # Plot Raw Price (normalized to start at 1 for comparison) or pure price?
+    # The prompt asks to show raw asset price AND cumulative value of strategy.
+    # To make them comparable on the same chart, it's often better to use dual axis or normalize.
+    # Let's use Dual Axis: Left = Price, Right = Strategy Performance
+    
+    # Trace 1: Asset Price
+    fig.add_trace(go.Scatter(
+        x=df_processed.index, 
+        y=df_processed['price'], 
+        mode='lines', 
+        name=f'{selected_asset_name} Price',
+        line=dict(color='blue')
+    ))
+
+    # Trace 2: Strategy Performance (Cumulative Return)
+    # We scale it to match the price starting point for visual comparison
+    start_price = df_processed['price'].iloc[0]
+    scaled_strategy = df_processed[strategy_col] * start_price
+
+    fig.add_trace(go.Scatter(
+        x=df_processed.index, 
+        y=scaled_strategy, 
+        mode='lines', 
+        name=f'Strategy Value ({strategy_type})',
+        line=dict(color='green', dash='dot')
+    ))
+
+    fig.update_layout(
+        title=f"Price vs Strategy Performance ({selected_days_label})",
+        xaxis_title="Date",
+        yaxis_title="Value (USD)",
+        legend=dict(x=0, y=1),
+        height=500
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    # --- 5. Performance Metrics ---
+    st.subheader("Performance Metrics")
+    
+    # Calculate metrics based on the strategy returns
+    # Note: For Buy&Hold, we use raw returns. For SMA, we use 'strategy_returns'
+    metric_col_input = 'returns' if strategy_type == "Buy & Hold" else 'strategy_returns'
+    
+    metrics = get_performance_summary(df_processed, metric_col_input)
+    
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Return", f"{metrics['Total Return']:.2%}")
+    c2.metric("Volatility (Ann.)", f"{metrics['Volatility']:.2%}")
+    c3.metric("Sharpe Ratio", f"{metrics['Sharpe Ratio']:.2f}")
+    c4.metric("Max Drawdown", f"{metrics['Max Drawdown']:.2%}")
+
+    # --- 6. Bonus: ML Prediction ---
+    st.markdown("---")
+    st.subheader("🔮 AI Price Prediction (Bonus)")
+    
+    if st.button("Predict Next Day Price"):
+        predictor = PricePredictor(df)
+        predicted_price, score = predictor.train_and_predict()
+        
+        if predicted_price:
+            col_pred1, col_pred2 = st.columns(2)
+            col_pred1.metric("Predicted Price (Tomorrow)", f"${predicted_price:,.2f}")
+            col_pred2.metric("Model Confidence (R²)", f"{score:.2f}")
+            
+            if score < 0.5:
+                st.warning("Warning: Model confidence is low. Market is volatile.")
+            else:
+                st.success("Model fit is reasonable.")
+        else:
+            st.warning("Not enough data to make a prediction.")
