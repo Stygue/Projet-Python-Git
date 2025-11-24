@@ -3,88 +3,101 @@ import numpy as np
 
 def get_performance_summary(df: pd.DataFrame, col_name: str = 'price'):
     """
-    Calcule les métriques avec protection totale contre les divisions par zéro et les infinis.
+    Calculates performance metrics (Total Return, Volatility, Sharpe, Max Drawdown).
+    Robust against division by zero and NaN values.
     """
-    # 1. Sécurité de base
+    # 1. Basic Safety Checks
     if df is None or df.empty:
         return _empty_metrics()
+
+    if col_name not in df.columns:
+        # Fallback: try to find a valid column
+        if 'strategy_returns' in df.columns:
+            col_name = 'strategy_returns'
+        elif 'returns' in df.columns:
+            col_name = 'returns'
+        elif 'price' in df.columns:
+            col_name = 'price'
+        else:
+            return _empty_metrics()
 
     df = df.copy()
     df = df.sort_index()
 
-    # --- DÉTECTION ET NORMALISATION ---
-    # On détermine si on travaille sur des PRIX ou des RENDEMENTS
-    is_returns_data = (col_name == 'returns') or ('price' not in df.columns and 'returns' in df.columns)
+    # 2. Determine Data Type (Price vs Returns)
+    # Heuristic: If column name contains 'return', treat as percentage change.
+    is_returns_data = 'return' in col_name
 
     if is_returns_data:
-        # Cas : Pourcentages (Returns)
-        target_col = 'returns' if 'returns' in df.columns else col_name
+        # --- CASE A: INPUT IS RETURNS (e.g., 0.01 for 1%) ---
+        # Clean the returns
+        series_returns = pd.to_numeric(df[col_name], errors='coerce').fillna(0)
+        series_returns = series_returns.replace([np.inf, -np.inf], 0)
         
-        # Nettoyage agressif des rendements
-        # On remplace les infinis par NaN, puis les NaN par 0
-        df['returns'] = pd.to_numeric(df[target_col], errors='coerce')
-        df['returns'] = df['returns'].replace([np.inf, -np.inf], np.nan).fillna(0)
-        
-        # Construction du Prix Synthétique (Base 100)
-        # On ajoute 1e-9 pour éviter d'avoir un prix strictement égal à 0
-        df['price_metrics'] = (1 + df['returns']).cumprod() * 100
+        # Reconstruct a Synthetic Price (Base 100) for Drawdown calculation
+        # Formula: 100 * (1 + r1) * (1 + r2)...
+        series_prices = 100 * (1 + series_returns).cumprod()
         
     else:
-        # Cas : Prix réels
-        target_col = col_name if col_name in df.columns else df.columns[0]
-        df['price_metrics'] = pd.to_numeric(df[target_col], errors='coerce')
-        df = df.dropna(subset=['price_metrics'])
+        # --- CASE B: INPUT IS PRICE (e.g., 50000 USD) ---
+        series_prices = pd.to_numeric(df[col_name], errors='coerce')
+        series_prices = series_prices.dropna()
         
-        # Calcul des rendements
-        df['returns'] = df['price_metrics'].pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
+        if len(series_prices) < 2:
+            return _empty_metrics()
+            
+        # Calculate Returns
+        series_returns = series_prices.pct_change().fillna(0)
+        series_returns = series_returns.replace([np.inf, -np.inf], 0)
 
-    # Si après nettoyage on a moins de 2 lignes, on arrête
-    if len(df) < 2:
-        return _empty_metrics()
-
-    # --- CALCULS ---
-
-    # 1. Rendement Total
-    start_price = df['price_metrics'].iloc[0]
-    end_price = df['price_metrics'].iloc[-1]
+    # 3. Calculate Metrics
     
-    if start_price <= 0: # Protection division
+    # A. Total Return
+    # We use the synthetic or real price evolution
+    start_price = series_prices.iloc[0]
+    end_price = series_prices.iloc[-1]
+    
+    if start_price <= 0:
         total_return = 0.0
     else:
         total_return = (end_price - start_price) / start_price
 
-    # 2. Volatilité
-    volatility = df['returns'].std() * np.sqrt(365)
+    # B. Volatility (Annualized)
+    # Standard deviation of daily returns * sqrt(365) for crypto
+    volatility = series_returns.std() * np.sqrt(365)
 
-    # 3. Sharpe Ratio
-    avg_annual_return = df['returns'].mean() * 365
+    # C. Sharpe Ratio
+    # Assuming Risk-Free Rate = 0 for simplicity in crypto context
+    avg_annual_return = series_returns.mean() * 365
+    
     if volatility == 0 or pd.isna(volatility):
         sharpe_ratio = 0.0
     else:
         sharpe_ratio = avg_annual_return / volatility
 
-    # 4. Max Drawdown (Le point critique)
-    rolling_max = df['price_metrics'].cummax()
+    # D. Max Drawdown
+    # Calculate rolling maximum of the price series
+    rolling_max = series_prices.cummax()
     
-    # On remplace les 0 dans rolling_max par une toute petite valeur pour éviter la division par zéro
+    # Avoid division by zero if price is 0 (unlikely but possible)
     rolling_max = rolling_max.replace(0, 1e-9)
     
-    drawdown = (df['price_metrics'] - rolling_max) / rolling_max
+    drawdown = (series_prices - rolling_max) / rolling_max
     max_drawdown = drawdown.min()
 
-    # --- NETTOYAGE FINAL DES RÉSULTATS ---
-    # On s'assure qu'aucun résultat n'est infini ou NaN
-    def clean_val(val):
-        if pd.isna(val) or np.isinf(val):
-            return 0.0
-        return val
-
+    # 4. Final Cleanup
     return {
-        "Total Return": clean_val(total_return),
-        "Volatility": clean_val(volatility),
-        "Sharpe Ratio": clean_val(sharpe_ratio),
-        "Max Drawdown": clean_val(max_drawdown)
+        "Total Return": _clean_val(total_return),
+        "Volatility": _clean_val(volatility),
+        "Sharpe Ratio": _clean_val(sharpe_ratio),
+        "Max Drawdown": _clean_val(max_drawdown)
     }
+
+def _clean_val(val):
+    """Helper to remove NaN/Inf from final output."""
+    if pd.isna(val) or np.isinf(val):
+        return 0.0
+    return val
 
 def _empty_metrics():
     return {
