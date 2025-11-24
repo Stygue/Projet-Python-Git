@@ -1,5 +1,6 @@
 import streamlit as st
 import plotly.graph_objects as go
+from quant_a.strategies import apply_buy_and_hold, apply_sma_crossover, apply_rsi_strategy
 import pandas as pd
 
 # Import data fetching (CoinGecko)
@@ -50,7 +51,12 @@ def render_quant_a_dashboard():
 
     # --- 3. Strategy Selection & Backtesting ---
     st.subheader("Strategy Backtesting")
-    strategy_type = st.radio("Choose Strategy", ["Buy & Hold", "SMA Crossover (Momentum)"], horizontal=True)
+    
+    strategy_type = st.radio(
+        "Choose Strategy", 
+        ["Buy & Hold", "SMA Crossover (Momentum)", "RSI Mean Reversion"], 
+        horizontal=True
+    )
 
     if strategy_type == "Buy & Hold":
         df_processed = apply_buy_and_hold(df)
@@ -58,12 +64,24 @@ def render_quant_a_dashboard():
         st.info("Strategy: Simply buying the asset at the start and holding it.")
         
     elif strategy_type == "SMA Crossover (Momentum)":
-        short_w = st.slider("Short Window (Days)", 5, 50, 10)
-        long_w = st.slider("Long Window (Days)", 20, 200, 30)
+        c1, c2 = st.columns(2)
+        short_w = c1.slider("Short Window (Days)", 5, 50, 10)
+        long_w = c2.slider("Long Window (Days)", 20, 200, 30)
         
         df_processed = apply_sma_crossover(df, short_w, long_w)
         strategy_col = 'cum_return_sma'
-        st.info(f"Strategy: Buy when SMA({short_w}) > SMA({long_w}).")
+        st.info(f"Strategy: Buy when SMA({short_w}) > SMA({long_w}). Trend Following.")
+
+    elif strategy_type == "RSI Mean Reversion":
+        c1, c2, c3 = st.columns(3)
+        rsi_window = c1.slider("RSI Window", 5, 30, 14)
+        lower_bound = c2.slider("Oversold (< Buy)", 10, 40, 30)
+        upper_bound = c3.slider("Overbought (> Sell)", 60, 90, 70)
+        
+        df_processed = apply_rsi_strategy(df, rsi_window, lower_bound, upper_bound)
+        strategy_col = 'cum_return_rsi'
+        st.info(f"Strategy: Buy when RSI < {lower_bound}, Sell when RSI > {upper_bound}. Contrarian.")
+
  # --- 4. Visualization (Main Chart) ---
     fig = go.Figure()
 
