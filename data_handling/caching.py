@@ -14,9 +14,11 @@ def get_cached_historical_data(coin_id: str, days: str):
     """
     return CryptoDataFetcher.get_historical_data(coin_id, days)
 
-@st.cache_data(ttl=60) # Cache current price for 1 minute
+@st.cache_data(ttl=60) # Cache data for 1 minute
 def get_cached_current_price(coin_id: str):
     """
-    Wrapper to fetch current price with Streamlit caching.
+    Wrapper to fetch current price AND 24h change.
+    Returns (price, change_24h).
     """
     return CryptoDataFetcher.get_current_price(coin_id)
+

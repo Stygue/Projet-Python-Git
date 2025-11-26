@@ -54,15 +54,28 @@ class CryptoDataFetcher:
             return None
 
     @staticmethod
-    def get_current_price(coin_id: str) -> float:
+    def get_current_price(coin_id: str) -> tuple:
+        """
+        Récupère le prix actuel ET la variation 24h.
+        Retourne un tuple : (prix, variation_24h)
+        """
         url = f"{CryptoDataFetcher.BASE_URL}/simple/price"
-        params = {"ids": coin_id, "vs_currencies": "usd"}
+        # On ajoute 'include_24hr_change' à true
+        params = {
+            "ids": coin_id, 
+            "vs_currencies": "usd",
+            "include_24hr_change": "true" 
+        }
         
         try:
             response = requests.get(url, params=params, timeout=5)
             if response.status_code == 200:
                 data = response.json()
-                return data.get(coin_id, {}).get('usd', 0.0)
+                coin_data = data.get(coin_id, {})
+                price = coin_data.get('usd', 0.0)
+                change = coin_data.get('usd_24h_change', 0.0)
+                return price, change
         except Exception:
-            return 0.0
-        return 0.0
+            return 0.0, 0.0
+        return 0.0, 0.0
+
