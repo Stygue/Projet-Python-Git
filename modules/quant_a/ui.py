@@ -1,13 +1,14 @@
 import streamlit as st
 import plotly.graph_objects as go
-from quant_a.strategies import apply_buy_and_hold, apply_sma_crossover, apply_rsi_strategy
 import pandas as pd
+from plotly.subplots import make_subplots
+
 
 # Import data fetching (CoinGecko)
 from data_handling.caching import get_cached_historical_data, get_cached_current_price
 
 # Import logic modules
-from quant_a.strategies import apply_buy_and_hold, apply_sma_crossover
+from quant_a.strategies import apply_buy_and_hold, apply_sma_crossover, apply_rsi_strategy 
 from quant_a.metrics import get_performance_summary
 from quant_a.prediction import PricePredictor
 
@@ -15,7 +16,7 @@ def render_quant_a_dashboard():
     """
     Main function to render the Single Asset Analysis (Quant A) dashboard.
     """
-    st.header("🦄 Single Asset Analysis (Quant A)")
+    st.header("Single Asset Analysis (Quant A)")
     st.markdown("Analyze individual crypto assets, backtest strategies, and predict future prices.")
 
     # --- 1. Sidebar Controls ---
@@ -82,44 +83,51 @@ def render_quant_a_dashboard():
         strategy_col = 'cum_return_rsi'
         st.info(f"Strategy: Buy when RSI < {lower_bound}, Sell when RSI > {upper_bound}. Contrarian.")
 
- # --- 4. Visualization (Main Chart) ---
-    fig = go.Figure()
-
-    # Plot Raw Price (normalized to start at 1 for comparison) or pure price?
-    # The prompt asks to show raw asset price AND cumulative value of strategy.
-    # To make them comparable on the same chart, it's often better to use dual axis or normalize.
-    # Let's use Dual Axis: Left = Price, Right = Strategy Performance
+    # --- 4. Visualization (Main Chart) ---
     
-    # Trace 1: Asset Price
-    fig.add_trace(go.Scatter(
-        x=df_processed.index, 
-        y=df_processed['price'], 
-        mode='lines', 
-        name=f'{selected_asset_name} Price',
-        line=dict(color='blue')
-    ))
+    # On crée une figure capable d'avoir deux axes Y (gauche et droite)
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # Trace 2: Strategy Performance (Cumulative Return)
-    # We scale it to match the price starting point for visual comparison
-    start_price = df_processed['price'].iloc[0]
-    scaled_strategy = df_processed[strategy_col] * start_price
-
-    fig.add_trace(go.Scatter(
-        x=df_processed.index, 
-        y=scaled_strategy, 
-        mode='lines', 
-        name=f'Strategy Value ({strategy_type})',
-        line=dict(color='green', dash='dot')
-    ))
-
-    fig.update_layout(
-        title=f"Price vs Strategy Performance ({selected_days_label})",
-        xaxis_title="Date",
-        yaxis_title="Value (USD)",
-        legend=dict(x=0, y=1),
-        height=500
+    # Trace 1 : Le PRIX de l'actif (Axe de GAUCHE)
+    fig.add_trace(
+        go.Scatter(
+            x=df_processed.index, 
+            y=df_processed['price'], 
+            mode='lines', 
+            name=f'{selected_asset_name} Price',
+            line=dict(color='#1f77b4', width=2) # Bleu
+        ),
+        secondary_y=False # Axe de gauche
     )
+
+    # Trace 2 : La PERFORMANCE de la stratégie (Axe de DROITE)
+    # Note : On utilise directement la colonne de stratégie (ex: 1.15), sans la multiplier par le prix !
+    fig.add_trace(
+        go.Scatter(
+            x=df_processed.index, 
+            y=df_processed[strategy_col], 
+            mode='lines', 
+            name=f'Strategy Cumulative Return',
+            line=dict(color='#2ca02c', width=2, dash='dot') # Vert pointillé
+        ),
+        secondary_y=True # Axe de droite
+    )
+
+    # Mise en forme du graphique
+    fig.update_layout(
+        title=f"Price vs Strategy Analysis ({selected_days_label})",
+        xaxis_title="Date",
+        height=500,
+        hovermode="x unified", # Affiche les infos des deux courbes quand on passe la souris
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    # Titres des axes Y
+    fig.update_yaxes(title_text="Asset Price (USD)", secondary_y=False)
+    fig.update_yaxes(title_text="Cumulative Return (1.0 = Start)", secondary_y=True, showgrid=False)
+
     st.plotly_chart(fig, use_container_width=True)
+
 
     # --- 5. Performance Metrics ---
     st.subheader("Performance Metrics")
