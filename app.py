@@ -1,6 +1,7 @@
 import streamlit as st
 import sys
 import os
+from streamlit_autorefresh import st_autorefresh
 
 # --- 1. LE PATCH (Indispensable) ---
 # Cela permet à Python de trouver le dossier 'quant_a' qui est caché dans 'modules'
@@ -27,7 +28,10 @@ st.set_page_config(
 # --- 4. STRUCTURE DE L'APPLICATION ---
 def main():
     st.sidebar.title("Navigation")
-    
+
+    # Refresh every 5 minutes (300000 milliseconds)
+    st_autorefresh(interval=300000, key="datarefresh")
+
     # Menu de gauche
     page = st.sidebar.radio(
         "Aller vers :",
