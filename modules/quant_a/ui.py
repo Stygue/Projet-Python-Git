@@ -37,18 +37,26 @@ def render_quant_a_dashboard():
     selected_days_label = st.sidebar.selectbox("Timeframe", list(days_options.keys()), index=1)
     days = days_options[selected_days_label]
 
-    # --- 2. Data Retrieval (CoinGecko API) ---
+        # --- 2. Data Retrieval (CoinGecko API) ---
     with st.spinner(f"Fetching data for {selected_asset_name}..."):
         # This calls your caching.py -> api_connector.py -> CoinGecko
         df = get_cached_historical_data(coin_id, days)
-        current_price = get_cached_current_price(coin_id)
+        
+        # CORRECTION ICI : On récupère les deux valeurs (Prix ET Variation)
+        price, change_24h = get_cached_current_price(coin_id)
 
     if df is None or df.empty:
         st.error("Error fetching data. Please try again later or check API limits.")
         return
 
     # Display Current Price
-    st.metric(label=f"{selected_asset_name} Price (USD)", value=f"${current_price:,.2f}")
+    # CORRECTION ICI : On utilise la variable 'price' (qui est un float) et non le tuple
+    # Bonus : On ajoute le paramètre 'delta' pour afficher la variation en vert/rouge
+    st.metric(
+        label=f"{selected_asset_name} Price (USD)", 
+        value=f"${price:,.2f}",
+        delta=f"{change_24h:.2f}%"
+    )
 
     # --- 3. Strategy Selection & Backtesting ---
     st.subheader("Strategy Backtesting")
