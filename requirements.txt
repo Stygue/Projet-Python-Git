@@ -4,4 +4,4 @@ numpy
 requests
 plotly
 scikit-learn
-streamlit-autorefres
+streamlit-autorefresh
