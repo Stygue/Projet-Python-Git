@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
-from typing import Optional
+from typing import Optional, Tuple
+import time # Importation nécessaire pour time.sleep()
 
 class CryptoDataFetcher:
     """
@@ -14,14 +15,11 @@ class CryptoDataFetcher:
         url = f"{CryptoDataFetcher.BASE_URL}/coins/{coin_id}/market_chart"
         
         # --- CORRECTION ---
-        # On ne demande plus "hourly" explicitement car c'est réservé aux comptes payants.
-        # On laisse CoinGecko décider de la précision (automatique).
         params = {
             "vs_currency": "usd",
             "days": days
         }
         
-        # On ajoute 'daily' seulement si on demande plus de 90 jours pour alléger la réponse
         if days.isdigit() and int(days) > 90:
             params['interval'] = 'daily'
 
@@ -33,6 +31,14 @@ class CryptoDataFetcher:
         try:
             response = requests.get(url, params=params, headers=headers, timeout=10)
             
+            # --- GESTION ROBUSTE DU RATE LIMIT (429) ---
+            if response.status_code == 429:
+                # Si la limite est dépassée, on attend 10 secondes et on retourne None.
+                print(f"⚠️ ERREUR API (429): Rate Limit Exceeded for {coin_id}. Waiting 10 seconds before returning None.")
+                time.sleep(10) 
+                return None
+            # --------------------------------------------
+
             if response.status_code != 200:
                 print(f"⚠️ ERREUR API ({response.status_code}): {response.text}")
                 return None
@@ -54,7 +60,7 @@ class CryptoDataFetcher:
             return None
 
     @staticmethod
-    def get_current_price(coin_id: str) -> tuple:
+    def get_current_price(coin_id: str) -> Tuple[float, float]:
         """
         Récupère le prix actuel ET la variation 24h.
         Retourne un tuple : (prix, variation_24h)
@@ -69,6 +75,14 @@ class CryptoDataFetcher:
         
         try:
             response = requests.get(url, params=params, timeout=5)
+            
+            # --- GESTION ROBUSTE DU RATE LIMIT (429) ---
+            if response.status_code == 429:
+                # Pour les prix actuels, on ne bloque pas l'application, on retourne zéro.
+                print(f"⚠️ ERREUR API (429) for current price {coin_id}. Returning 0.0, 0.0.")
+                return 0.0, 0.0
+            # --------------------------------------------
+            
             if response.status_code == 200:
                 data = response.json()
                 coin_data = data.get(coin_id, {})
@@ -78,4 +92,3 @@ class CryptoDataFetcher:
         except Exception:
             return 0.0, 0.0
         return 0.0, 0.0
-
