@@ -81,7 +81,7 @@ def render_quant_b_dashboard():
                 min_value=0.0,
                 max_value=100.0,
                 value=st.session_state[f"weight_slider_{name}"],
-                step=0.01, # Augmenté la précision à 0.01
+                step=0.01,
                 key=f"weight_slider_{name}"
             )
             weights.append(weight / 100) # Convert to decimal for calculation
@@ -109,6 +109,13 @@ def render_quant_b_dashboard():
 
     # Calculate Metrics and Performance Series
     metrics = calculate_portfolio_metrics(price_df, weights, risk_free_rate)
+    
+    # --- GESTION D'ERREUR CRITIQUE (Réintroduite pour résoudre le TypeError) ---
+    if metrics is None:
+        st.error("❌ ERROR: Failed to calculate portfolio metrics. Data might be insufficient or parameters are invalid.")
+        return
+    # ----------------------------------------------------------------
+
     portfolio_cumulative = calculate_portfolio_performance_series(price_df, weights)
     individual_cumulative = calculate_individual_cumulative_returns(price_df)
 
@@ -169,7 +176,8 @@ def render_quant_b_dashboard():
         selector=dict(name='Portfolio')
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    # Correction de dépréciation (width='stretch')
+    st.plotly_chart(fig, width='stretch') 
     
     st.markdown("---")
     
