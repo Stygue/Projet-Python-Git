@@ -132,3 +132,34 @@ def calculate_individual_cumulative_returns(price_df: pd.DataFrame) -> pd.DataFr
     
     return normalized_prices.rename(columns={col: col for col in normalized_prices.columns})
 
+def calculate_rebalanced_portfolio(price_df, target_weights, frequency='W'):
+    """
+    Simule la performance d'un portefeuille avec rebalancement périodique.
+    frequency: 'D' (Daily), 'W' (Weekly), 'M' (Monthly)
+    """
+    # Calcul des rendements quotidiens simples (pas log pour le rebalancement)
+    returns = price_df.pct_change().fillna(0)
+    
+    # Initialisation
+    n_assets = len(target_weights)
+    current_weights = np.array(target_weights)
+    portfolio_value = [1.0] # Valeur de départ
+    
+    # Identification des dates de rebalancement
+    rebalance_dates = price_df.resample(frequency).last().index
+
+    for i in range(1, len(price_df)):
+        # 1. Evolution de la valeur basée sur les poids de la veille
+        asset_returns = returns.iloc[i].values
+        day_return = np.sum(current_weights * asset_returns)
+        new_value = portfolio_value[-1] * (1 + day_return)
+        portfolio_value.append(new_value)
+        
+        # 2. Mise à jour des poids "driftés" par le marché
+        current_weights = current_weights * (1 + asset_returns) / (1 + day_return)
+        
+        # 3. Rebalancement si on est à une date prévue
+        if price_df.index[i] in rebalance_dates:
+            current_weights = np.array(target_weights)
+            
+    return pd.Series(portfolio_value, index=price_df.index)
