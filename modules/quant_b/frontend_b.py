@@ -7,6 +7,7 @@ from modules.quant_b.portfolio_logic import (
     calculate_portfolio_metrics,
     calculate_portfolio_performance_series,
     calculate_individual_cumulative_returns,
+    calculate_rebalanced_portfolio, # Nouvelle fonction à importer
     SUPPORTED_ASSETS
 )
 
@@ -44,6 +45,17 @@ def render_quant_b_dashboard():
             step=0.005,
             format="%.4f"
         )
+
+        st.markdown("---")
+        st.markdown("#### 🔄 Rebalancing Strategy")
+        
+        # Ajout du paramètre de fréquence de rebalancement demandé par le prof
+        rebalance_freq = st.selectbox(
+            "Rebalancing Frequency:",
+            options=["None (Buy & Hold)", "Daily", "Weekly", "Monthly"],
+            index=2,
+            help="Determine how often the portfolio is re-aligned to target weights."
+        )
         
     # --- 2. VALIDATION ---
     if len(selected_assets_names) < 3:
@@ -70,12 +82,11 @@ def render_quant_b_dashboard():
 
     st.write("Adjust allocation weights (in %) :")
     for i, name in enumerate(selected_assets_names):
-        # Initialisation du session_state si non défini, sinon le slider lit la valeur existante
+        # Initialisation du session_state si non défini
         if f"weight_slider_{name}" not in st.session_state:
             st.session_state[f"weight_slider_{name}"] = default_weight_value
             
         with cols[i]:
-            # Le slider lit/écrit directement dans st.session_state
             weight = st.slider(
                 name,
                 min_value=0.0,
@@ -84,18 +95,13 @@ def render_quant_b_dashboard():
                 step=0.01,
                 key=f"weight_slider_{name}"
             )
-            weights.append(weight / 100) # Convert to decimal for calculation
+            weights.append(weight / 100)
             
     # Check if weights sum to 100%
     weights_sum = sum(weights) * 100
     if weights_sum < 99.99 or weights_sum > 100.01:
         st.error(f"The sum of weights must equal 100%. Current sum: {weights_sum:.2f}%")
-        
-        # Le bouton utilise la fonction de rappel pour mettre à jour les poids
-        st.button(
-            "Distribute Weights Equally",
-            on_click=set_equal_weights # Appel de la fonction de rappel avant le RERUN
-        )
+        st.button("Distribute Weights Equally", on_click=set_equal_weights)
         return
         
     # --- 4. DATA LOADING AND INITIALIZATION ---
@@ -107,89 +113,75 @@ def render_quant_b_dashboard():
         st.error("Could not load data. Check API status or the selected time period.")
         return
 
-    # Calculate Metrics and Performance Series
+    # --- 4.1 LOGIQUE DE REBALANCEMENT ---
+    # Conversion de la sélection UI en code de fréquence pandas
+    freq_map = {"None (Buy & Hold)": None, "Daily": "D", "Weekly": "W", "Monthly": "M"}
+    freq_code = freq_map[rebalance_freq]
+
+    # Calcul de la performance cumulative avec ou sans rebalancement
+    if freq_code:
+        portfolio_cumulative = calculate_rebalanced_portfolio(price_df, weights, freq_code)
+    else:
+        portfolio_cumulative = calculate_portfolio_performance_series(price_df, weights)
+
+    # Calcul des métriques et des rendements individuels
     metrics = calculate_portfolio_metrics(price_df, weights, risk_free_rate)
     
-    # --- GESTION D'ERREUR CRITIQUE (Réintroduite pour résoudre le TypeError) ---
     if metrics is None:
-        st.error("❌ ERROR: Failed to calculate portfolio metrics. Data might be insufficient or parameters are invalid.")
+        st.error("❌ ERROR: Failed to calculate portfolio metrics.")
         return
-    # ----------------------------------------------------------------
 
-    portfolio_cumulative = calculate_portfolio_performance_series(price_df, weights)
     individual_cumulative = calculate_individual_cumulative_returns(price_df)
 
     # --- 5. KEY METRICS DISPLAY ---
     st.markdown("---")
     st.markdown("### 📈 Performance Metrics")
+    
+    if freq_code:
+        st.caption(f"Strategy: Periodic Rebalancing ({rebalance_freq})")
+    else:
+        st.caption("Strategy: Buy & Hold (No rebalancing)")
 
     col1, col2, col3 = st.columns(3)
-    
-    # Display Annual Return
-    col1.metric(
-        "Annualized Return", 
-        f"{metrics['Annual Return (%)']:.2f}%", 
-        help="Expected annual return based on historical data."
-    )
-    # Display Annual Volatility
-    col2.metric(
-        "Annual Volatility (Risk)", 
-        f"{metrics['Annual Volatility (%)']:.2f}%", 
-        help="Annualized standard deviation of returns (risk)."
-    )
-    # Display Sharpe Ratio
-    col3.metric(
-        "Sharpe Ratio", 
-        f"{metrics['Sharpe Ratio']:.2f}", 
-        help="Risk-adjusted return (higher is better)."
-    )
+    col1.metric("Annualized Return", f"{metrics['Annual Return (%)']:.2f}%")
+    col2.metric("Annual Volatility (Risk)", f"{metrics['Annual Volatility (%)']:.2f}%")
+    col3.metric("Sharpe Ratio", f"{metrics['Sharpe Ratio']:.2f}")
     
     st.markdown("---")
     
     # --- 6. MAIN CHART (ASSET VS. PORTFOLIO) ---
     st.markdown("### 📊 Cumulative Performance (Asset vs. Portfolio)")
     
-    # 6.1 Data Preparation
     plot_df = individual_cumulative.copy()
     plot_df['Portfolio'] = portfolio_cumulative
     plot_df.index.name = 'Date'
     
-    # Transform DataFrame to long format for Plotly (best practice)
     plot_long = plot_df.reset_index().melt(
         id_vars='Date', 
         var_name='Asset/Portfolio', 
         value_name='Cumulative Value'
     )
     
-    # 6.2 Plotting with Plotly
     fig = px.line(
         plot_long, 
         x='Date', 
         y='Cumulative Value', 
         color='Asset/Portfolio',
-        title="Performance Evolution (Normalized to 1.0 at Start Date)"
+        title=f"Performance Evolution (Rebalancing: {rebalance_freq})"
     )
     
-    # Highlight the Portfolio line for clear visualization
-    fig.update_traces(
-        line=dict(width=3), 
-        selector=dict(name='Portfolio')
-    )
-    
-    # Correction de dépréciation (width='stretch')
+    fig.update_traces(line=dict(width=4), selector=dict(name='Portfolio'))
     st.plotly_chart(fig, width='stretch') 
     
     st.markdown("---")
     
     # --- 7. CORRELATION MATRIX ---
     st.markdown("### 🤝 Correlation Matrix of Daily Returns")
-    st.caption("Measures the relationship between asset returns (Closer to 1 = strong correlation, closer to 0 = better diversification effect).")
+    st.caption("Measures the relationship between asset returns.")
     
     col_corr, col_empty = st.columns([2, 1])
-    
     with col_corr:
-        # The HTML table was pre-calculated in portfolio_logic.py
         st.markdown(metrics['Correlation Matrix'], unsafe_allow_html=True)
         
     st.markdown("---")
-    st.caption("The 'Quant B' module successfully implements the minimum requirements: 3+ assets, portfolio simulation, and display of key metrics (Correlation, Volatility, Returns) and visual comparisons.")
+    st.caption("The 'Quant B' module provides dynamic rebalancing simulation and multi-asset risk analysis.")

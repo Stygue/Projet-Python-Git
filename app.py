@@ -145,14 +145,13 @@ def render_home():
 
     with c2:
         with st.container():
-            # Status is now FUNCTIONAL
             st.success("### 💼 Quant B: Portfolio Manager") 
             st.markdown("""
-            **Mission :** Global portfolio management and multi-asset analysis.
-            
-            * 🚧 **Statut :** Fonctionnel (sans Markowitz avancé).
-            * 🎯 **Objectif :** Allocation d'actifs (Poids Égaux/Custom).
-            * 📉 **Risque :** Analyse de la Corrélation, Volatilité.
+            **Fonctionnalités :**
+            * ⚖️ **Allocation Dynamique :** Choix des poids par curseurs.
+            * 🔄 **Stratégie de Rebalancement :** Simulation de maintien des poids cibles (Rebalancing).
+            * 🤝 **Analyse Multi-Actifs :** Matrice de corrélation et volatilité agrégée.
+            * 💡 **Astuce UI :** Utilisez la barre d'outils en haut à droite des graphiques pour zoomer ou capturer une image.
             """)
             st.markdown("👉 *Select 'Quant B' in the left menu.*")
 
