@@ -163,3 +163,35 @@ def calculate_rebalanced_portfolio(price_df, target_weights, frequency='W'):
             current_weights = np.array(target_weights)
             
     return pd.Series(portfolio_value, index=price_df.index)
+
+def calculate_rebalanced_portfolio_with_quantities(price_df, target_weights, initial_investment=1000, frequency='W'):
+    """
+    Simule la performance et l'évolution des quantités.
+    """
+    returns = price_df.pct_change().fillna(0)
+    n_assets = len(target_weights)
+    
+    # Initialisation : on achète pour le montant initial selon les poids cibles
+    portfolio_value = [initial_investment]
+    # Quantités initiales = (Montant alloué) / (Prix de l'actif)
+    initial_prices = price_df.iloc[0].values
+    current_amounts = (initial_investment * np.array(target_weights)) / initial_prices
+    
+    amounts_history = [current_amounts.copy()]
+    rebalance_dates = price_df.resample(frequency).last().index
+
+    for i in range(1, len(price_df)):
+        # 1. Valeur du jour = Somme de (Quantité détenue * Prix du jour)
+        current_prices = price_df.iloc[i].values
+        day_value = np.sum(current_amounts * current_prices)
+        portfolio_value.append(day_value)
+        
+        # 2. Rebalancement périodique
+        if price_df.index[i] in rebalance_dates:
+            # On recalcule les quantités pour que (Quantité * Prix) / Valeur Totale = Poids Cible
+            current_amounts = (day_value * np.array(target_weights)) / current_prices
+            
+        amounts_history.append(current_amounts.copy())
+            
+    df_amounts = pd.DataFrame(amounts_history, index=price_df.index, columns=price_df.columns)
+    return pd.Series(portfolio_value, index=price_df.index), df_amounts
