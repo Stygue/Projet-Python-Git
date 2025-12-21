@@ -2,7 +2,8 @@ import streamlit as st
 import sys
 import os
 from streamlit_autorefresh import st_autorefresh
-from data_handling.caching import get_cached_current_price
+# AJOUT : Importation de get_cached_current_prices_batch
+from data_handling.caching import get_cached_current_price, get_cached_current_prices_batch 
 
 # --- 1. THE PATCH (Essential) ---
 # This allows Python to find the 'quant_a' and 'quant_b' folders located inside 'modules'
@@ -15,7 +16,7 @@ if modules_path not in sys.path:
 try:
     # Import Quant A dashboard (Partner's code)
     from quant_a.ui import render_quant_a_dashboard
-    # Import Quant B dashboard (Your new code) 👈 ADDITION
+    # Import Quant B dashboard (Your new code) 
     from quant_b.frontend_b import render_quant_b_dashboard
 except ImportError as e:
     st.error(f"Import Error: {e}")
@@ -50,7 +51,7 @@ def main():
         # Call the partner's module function
         render_quant_a_dashboard()
     elif page == "Quant B: Portfolio":
-        # Call your new module function 👈 MODIFICATION
+        # Call your new module function 
         render_quant_b_dashboard()
 
 def render_home():
@@ -88,10 +89,16 @@ def render_home():
         # --- MARKET OVERVIEW (REAL-TIME DATA + 24H CHANGE) ---
     st.subheader("🌍 Market Pulse (Price & 24h Change)")
     
-    # Retrieve price and change for key assets
-    btc_price, btc_change = get_cached_current_price("bitcoin")
-    eth_price, eth_change = get_cached_current_price("ethereum")
-    sol_price, sol_change = get_cached_current_price("solana")
+    # 1. Define the assets needed for the home page
+    HOME_ASSETS = ["bitcoin", "ethereum", "solana"]
+
+    # 2. Use the new batch function (1 request instead of 3) 👈 MODIFICATION CLÉ
+    prices_data = get_cached_current_prices_batch(HOME_ASSETS) 
+
+    # 3. Extract the data safely from the dictionary
+    btc_price, btc_change = prices_data.get("bitcoin", (0.0, 0.0))
+    eth_price, eth_change = prices_data.get("ethereum", (0.0, 0.0))
+    sol_price, sol_change = prices_data.get("solana", (0.0, 0.0))
 
     col1, col2, col3, col4 = st.columns(4)
     
@@ -138,14 +145,14 @@ def render_home():
 
     with c2:
         with st.container():
-            # Status is now COMPLETE
+            # Status is now FUNCTIONAL
             st.success("### 💼 Quant B: Portfolio Manager") 
             st.markdown("""
             **Mission :** Global portfolio management and multi-asset analysis.
             
-            * ✅ **Status :** Operational and Integrated.
-            * 🎯 **Objective :** Asset allocation (Equal Weight, Custom Weights).
-            * 🤝 **Risk :** Correlation Matrix, Volatility, Sharpe Ratio.
+            * 🚧 **Statut :** Fonctionnel (sans Markowitz avancé).
+            * 🎯 **Objectif :** Allocation d'actifs (Poids Égaux/Custom).
+            * 📉 **Risque :** Analyse de la Corrélation, Volatilité.
             """)
             st.markdown("👉 *Select 'Quant B' in the left menu.*")
 
@@ -159,8 +166,6 @@ def render_home():
     with f2:
         st.button("🔄 Refresh Data Now")
 
-
-# The placeholder function `render_quant_b()` has been removed as requested.
 
 if __name__ == "__main__":
     main()
