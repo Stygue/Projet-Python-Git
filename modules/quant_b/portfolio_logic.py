@@ -1,0 +1,197 @@
+import numpy as np
+import pandas as pd
+from typing import List, Dict, Optional
+from data_handling.caching import get_cached_historical_data
+
+# --- CONSTANTS ---
+# Dictionary mapping display names to CoinGecko IDs
+SUPPORTED_ASSETS = {
+    "Bitcoin": "bitcoin",
+    "Ethereum": "ethereum",
+    "Solana": "solana",
+    "Cardano": "cardano",
+    "Polkadot": "polkadot"
+}
+
+# --- PRIMARY FUNCTION: DATA LOADING ---
+def load_multi_asset_data(asset_ids: List[str], days: str = "365") -> Optional[pd.DataFrame]:
+    """
+    Loads historical price data for a list of assets, synchronizing and cleaning the time series.
+    
+    Args:
+        asset_ids (List[str]): The CoinGecko IDs of the cryptocurrencies.
+        days (str): The historical period to retrieve (e.g., '365').
+        
+    Returns:
+        Optional[pd.DataFrame]: DataFrame with one price column per asset, or None if failed.
+    """
+    all_prices = {}
+    
+    # Fetch data for each selected asset using the common caching mechanism
+    for asset_id in asset_ids:
+        # Use common cached function to reduce API load
+        df = get_cached_historical_data(asset_id, days)
+        
+        if df is not None and not df.empty:
+            # Rename the 'price' column to the asset ID for easy identification
+            all_prices[asset_id] = df['price']
+
+    # Handle the case where no data was successfully loaded
+    if not all_prices:
+        return None
+
+    # Concatenate all price series into a single DataFrame
+    price_df = pd.DataFrame(all_prices)
+    
+    # Crucial step: Drop rows with any missing values to ensure all assets are aligned on the same dates
+    # This prevents errors in correlation and portfolio calculations.
+    price_df.dropna(inplace=True)
+    
+    return price_df
+
+# --- PORTFOLIO CALCULATIONS ---
+def calculate_portfolio_metrics(
+    price_df: pd.DataFrame, 
+    weights: List[float], 
+    risk_free_rate: float = 0.0
+) -> Optional[Dict[str, float or str]]:
+    """
+    Calculates the key portfolio metrics (Annualized Return, Volatility, Sharpe Ratio, Correlation).
+
+    Args:
+        price_df (pd.DataFrame): Aligned DataFrame of asset prices.
+        weights (List[float]): The allocation weights for each asset.
+        risk_free_rate (float): Annual risk-free rate for Sharpe Ratio calculation.
+
+    Returns:
+        Optional[Dict[str, float or str]]: Dictionary of portfolio metrics.
+    """
+    if price_df.empty or len(weights) != price_df.shape[1]:
+        return None
+
+    # 1. Calculate Logarithmic Daily Returns
+    # Log returns are generally preferred for portfolio calculations (easier aggregation).
+    log_returns = np.log(price_df / price_df.shift(1)).dropna()
+
+    # 2. Annualization Constants
+    TRADING_DAYS_PER_YEAR = 365 # Using 365 for 24/7 crypto markets
+
+    # 3. Portfolio Return
+    asset_expected_returns_annual = log_returns.mean() * TRADING_DAYS_PER_YEAR
+    portfolio_return_annual = np.sum(asset_expected_returns_annual * weights)
+
+    # 4. Portfolio Volatility (Risk)
+    cov_matrix_daily = log_returns.cov()
+    # Volatility is calculated using the covariance matrix and weights: sqrt(W^T * Cov * W * Days)
+    portfolio_volatility_annual = np.sqrt(
+        np.dot(weights, np.dot(cov_matrix_daily * TRADING_DAYS_PER_YEAR, weights))
+    )
+
+    # 5. Sharpe Ratio
+    sharpe_ratio = (portfolio_return_annual - risk_free_rate) / portfolio_volatility_annual
+    
+    # 6. Correlation Matrix (HTML formatted for easy Streamlit display)
+    correlation_matrix = log_returns.corr().to_html(classes='table table-striped', float_format='{:.2f}'.format)
+
+
+    return {
+        "Annual Return (%)": portfolio_return_annual * 100,
+        "Annual Volatility (%)": portfolio_volatility_annual * 100,
+        "Sharpe Ratio": sharpe_ratio,
+        "Correlation Matrix": correlation_matrix
+    }
+def calculate_portfolio_performance_series(price_df: pd.DataFrame, weights: List[float]) -> pd.Series:
+    """
+    Calculates the time series of the portfolio's cumulative value.
+    This series is normalized to start at 1.0.
+    """
+    if price_df.empty or len(weights) != price_df.shape[1]:
+        return pd.Series(dtype=float)
+
+    # Daily log returns are required
+    log_returns = np.log(price_df / price_df.shift(1)).dropna()
+
+    # Calculate daily portfolio return (weighted sum of asset returns)
+    portfolio_daily_return = log_returns.dot(weights)
+    
+    # Calculate cumulative performance: exp(cumulative sum of log returns)
+    cumulative_performance = np.exp(portfolio_daily_return.cumsum())
+    
+    # The time series index will be the same as the log_returns index (starts one day after prices)
+    return cumulative_performance
+
+# --- UTILITY FUNCTION: INDIVIDUAL ASSET RETURNS ---
+def calculate_individual_cumulative_returns(price_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calculates the time series of cumulative value for each individual asset.
+    This series is normalized to start at 1.0 (Day 0).
+    """
+    # Normalization: Current Price / First Price
+    # This allows for easy comparison with the portfolio's performance
+    normalized_prices = price_df / price_df.iloc[0]
+    
+    return normalized_prices.rename(columns={col: col for col in normalized_prices.columns})
+
+def calculate_rebalanced_portfolio(price_df, target_weights, frequency='W'):
+    """
+    Simule la performance d'un portefeuille avec rebalancement périodique.
+    frequency: 'D' (Daily), 'W' (Weekly), 'M' (Monthly)
+    """
+    # Calcul des rendements quotidiens simples (pas log pour le rebalancement)
+    returns = price_df.pct_change().fillna(0)
+    
+    # Initialisation
+    n_assets = len(target_weights)
+    current_weights = np.array(target_weights)
+    portfolio_value = [1.0] # Valeur de départ
+    
+    # Identification des dates de rebalancement
+    rebalance_dates = price_df.resample(frequency).last().index
+
+    for i in range(1, len(price_df)):
+        # 1. Evolution de la valeur basée sur les poids de la veille
+        asset_returns = returns.iloc[i].values
+        day_return = np.sum(current_weights * asset_returns)
+        new_value = portfolio_value[-1] * (1 + day_return)
+        portfolio_value.append(new_value)
+        
+        # 2. Mise à jour des poids "driftés" par le marché
+        current_weights = current_weights * (1 + asset_returns) / (1 + day_return)
+        
+        # 3. Rebalancement si on est à une date prévue
+        if price_df.index[i] in rebalance_dates:
+            current_weights = np.array(target_weights)
+            
+    return pd.Series(portfolio_value, index=price_df.index)
+
+def calculate_rebalanced_portfolio_with_quantities(price_df, target_weights, initial_investment=1000, frequency='W'):
+    """
+    Simule la performance et l'évolution des quantités.
+    """
+    returns = price_df.pct_change().fillna(0)
+    n_assets = len(target_weights)
+    
+    # Initialisation : on achète pour le montant initial selon les poids cibles
+    portfolio_value = [initial_investment]
+    # Quantités initiales = (Montant alloué) / (Prix de l'actif)
+    initial_prices = price_df.iloc[0].values
+    current_amounts = (initial_investment * np.array(target_weights)) / initial_prices
+    
+    amounts_history = [current_amounts.copy()]
+    rebalance_dates = price_df.resample(frequency).last().index
+
+    for i in range(1, len(price_df)):
+        # 1. Valeur du jour = Somme de (Quantité détenue * Prix du jour)
+        current_prices = price_df.iloc[i].values
+        day_value = np.sum(current_amounts * current_prices)
+        portfolio_value.append(day_value)
+        
+        # 2. Rebalancement périodique
+        if price_df.index[i] in rebalance_dates:
+            # On recalcule les quantités pour que (Quantité * Prix) / Valeur Totale = Poids Cible
+            current_amounts = (day_value * np.array(target_weights)) / current_prices
+            
+        amounts_history.append(current_amounts.copy())
+            
+    df_amounts = pd.DataFrame(amounts_history, index=price_df.index, columns=price_df.columns)
+    return pd.Series(portfolio_value, index=price_df.index), df_amounts

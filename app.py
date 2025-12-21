@@ -2,55 +2,54 @@ import streamlit as st
 import sys
 import os
 from streamlit_autorefresh import st_autorefresh
-from data_handling.caching import get_cached_current_price
+# AJOUT : Importation de get_cached_current_prices_batch
+from data_handling.caching import get_cached_current_price, get_cached_current_prices_batch 
 
-# --- 1. LE PATCH (Indispensable) ---
-# Cela permet à Python de trouver le dossier 'quant_a' qui est caché dans 'modules'
+# --- 1. THE PATCH (Essential) ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 modules_path = os.path.join(current_dir, 'modules')
 if modules_path not in sys.path:
     sys.path.append(modules_path)
 
-# --- 2. IMPORTATIONS ---
+# --- 2. IMPORTS ---
 try:
-    # On importe ton dashboard Quant A
     from quant_a.ui import render_quant_a_dashboard
+    from quant_b.frontend_b import render_quant_b_dashboard
 except ImportError as e:
-    st.error(f"Erreur d'importation : {e}")
+    st.error(f"Import Error: {e}")
     st.stop()
 
-# --- 3. CONFIGURATION DE LA PAGE ---
+# --- 3. PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Projet Finance",
+    page_title="Projet Finance - Crypto Quant",
     page_icon="📈",
     layout="wide"
 )
 
-# --- 4. STRUCTURE DE L'APPLICATION ---
+# --- 4. APPLICATION STRUCTURE ---
 def main():
-    st.sidebar.title("Navigation")
+    st.sidebar.title("🧭 Navigation")
 
     # Refresh every 5 minutes (300000 milliseconds)
     st_autorefresh(interval=300000, key="datarefresh")
 
-    # Menu de gauche
     page = st.sidebar.radio(
-        "Aller vers :",
-        ["Accueil", "Quant A: Crypto Analysis", "Quant B: Portfolio"]
+        "Go to:",
+        ["Home", "Quant A: Crypto Analysis", "Quant B: Portfolio"]
     )
 
     st.sidebar.markdown("---")
+    st.sidebar.info("💡 **Tip:** All charts are interactive. You can zoom, pan, and hover for details.")
 
-    # Affichage de la bonne page
-    if page == "Accueil":
+    if page == "Home":
         render_home()
     elif page == "Quant A: Crypto Analysis":
         render_quant_a_dashboard()
     elif page == "Quant B: Portfolio":
-        render_quant_b()
+        render_quant_b_dashboard()
 
 def render_home():
-    # --- HERO SECTION (En-tête visuel) ---
+    # --- HERO SECTION ---
     st.markdown("""
         <style>
         .hero-title {
@@ -66,56 +65,38 @@ def render_home():
             color: #666;
             margin-bottom: 2rem;
         }
-        .card-box {
-            padding: 20px;
-            border-radius: 10px;
-            border: 1px solid #e0e0e0;
-            background-color: #f9f9f9;
-            margin-bottom: 20px;
-        }
         </style>
     """, unsafe_allow_html=True)
 
     st.markdown('<p class="hero-title">Crypto Quant Dashboard</p>', unsafe_allow_html=True)
-    st.markdown('<p class="hero-subtitle">Plateforme avancée d\'analyse quantitative, de backtesting et de prédiction IA.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="hero-subtitle">Advanced quantitative analysis, backtesting, and AI prediction platform.</p>', unsafe_allow_html=True)
 
     st.divider()
 
-       # --- MARKET OVERVIEW (VRAIES DONNÉES + VARIATION) ---
-    st.subheader("🌍 Market Pulse (Prix & Variation 24h)")
+    # --- MARKET OVERVIEW ---
+    st.subheader("🌍 Market Pulse (Price & 24h Change)")
     
-    # On récupère MAINTENANT deux valeurs : le prix ET la variation
-    btc_price, btc_change = get_cached_current_price("bitcoin")
-    eth_price, eth_change = get_cached_current_price("ethereum")
-    sol_price, sol_change = get_cached_current_price("solana")
+    HOME_ASSETS = ["bitcoin", "ethereum", "solana"]
+    prices_data = get_cached_current_prices_batch(HOME_ASSETS) 
+
+    btc_price, btc_change = prices_data.get("bitcoin", (0.0, 0.0))
+    eth_price, eth_change = prices_data.get("ethereum", (0.0, 0.0))
+    sol_price, sol_change = prices_data.get("solana", (0.0, 0.0))
 
     col1, col2, col3, col4 = st.columns(4)
-    
     with col1:
-        st.metric(
-            label="Bitcoin (BTC)", 
-            value=f"${btc_price:,.2f}", 
-            delta=f"{btc_change:.2f}%"
-        )
+        st.metric(label="Bitcoin (BTC)", value=f"${btc_price:,.2f}", delta=f"{btc_change:.2f}%")
     with col2:
-        st.metric(
-            label="Ethereum (ETH)", 
-            value=f"${eth_price:,.2f}", 
-            delta=f"{eth_change:.2f}%"
-        )
+        st.metric(label="Ethereum (ETH)", value=f"${eth_price:,.2f}", delta=f"{eth_change:.2f}%")
     with col3:
-        st.metric(
-            label="Solana (SOL)", 
-            value=f"${sol_price:,.2f}", 
-            delta=f"{sol_change:.2f}%"
-        )
+        st.metric(label="Solana (SOL)", value=f"${sol_price:,.2f}", delta=f"{sol_change:.2f}%")
     with col4:
-        st.metric(label="Status API", value="Online", delta="OK")
+        st.metric(label="API Status", value="Online", delta="OK")
 
     st.markdown("---")
 
-    # --- MODULES NAVIGATION (Cartes interactives) ---
-    st.subheader("🚀 Accès aux Modules")
+    # --- MODULES NAVIGATION ---
+    st.subheader("🚀 Module Guides & Access")
     
     c1, c2 = st.columns(2)
 
@@ -123,41 +104,42 @@ def render_home():
         with st.container():
             st.info("### 📊 Quant A: Crypto Analysis")
             st.markdown("""
-            **Mission :** Analyser la performance d'actifs individuels.
+            **Focus :** Analyse technique et prédictive d'un actif unique.
             
-            *   ✅ **Stratégies :** Buy & Hold, SMA Crossover, RSI.
-            *   ✅ **Visualisation :** Graphiques interactifs Double Axe.
-            *   ✅ **Métriques :** Sharpe Ratio, Volatilité, Drawdown.
-            *   ✅ **Bonus :** Prédiction de prix par Machine Learning.
+            **Guide d'utilisation :**
+            1. **Select Asset :** Choisissez une crypto-monnaie dans la barre latérale.
+            2. **Indicators :** Superposez SMA, RSI ou Bollinger pour analyser les tendances.
+            3. **Interactive Legend :** Cliquez sur les éléments de la légende du graphique pour masquer/afficher les indicateurs.
+            4. **AI Prediction :** Consultez la section 'ML Prediction' pour voir la tendance estimée à 7 jours via régression linéaire.
             """)
-            st.markdown("👉 *Sélectionnez 'Quant A' dans le menu à gauche.*")
+            st.markdown("👉 *Select 'Quant A' in the left menu.*")
 
     with c2:
         with st.container():
-            st.warning("### 💼 Quant B: Portfolio Manager")
+            st.success("### 💼 Quant B: Portfolio Manager") 
             st.markdown("""
-            **Mission :** Gestion de portefeuille global.
+            **Focus :** Simulation de gestion de portefeuille et optimisation du risque.
             
-            *   🚧 **Statut :** En cours de développement.
-            *   🎯 **Objectif :** Optimisation de l'allocation d'actifs (Markowitz).
-            *   📉 **Risque :** Analyse de la VaR (Value at Risk).
+            **Guide d'utilisation :**
+            1. **Portfolio Construction :** Sélectionnez au moins 3 actifs à combiner.
+            2. **Price Weighting :** Utilisez les curseurs pour définir vos poids cibles (ex: 50% BTC, 25% ETH, 25% SOL).
+            3. **Rebalancing Strategy :** Choisissez une fréquence (Daily, Weekly, Monthly). Le système simulera la vente des actifs gagnants pour racheter les perdants afin de maintenir vos poids.
+            4. **Quantity Tracking :** Observez le graphique 'Coin Quantities' pour voir l'ajustement dynamique du nombre de jetons détenus suite au rebalancement.
+            5. **Risk Analysis :** Consultez la matrice de corrélation pour vérifier la diversification de votre panier.
+            
+            **💡 Interactive Tip :** Double-cliquez sur 'Portfolio' dans la légende du graphique de performance pour isoler la courbe globale.
             """)
-            st.markdown("👉 *Sélectionnez 'Quant B' dans le menu à gauche.*")
+            st.markdown("👉 *Select 'Quant B' in the left menu.*")
 
     # --- FOOTER ---
     st.markdown("---")
     
     f1, f2 = st.columns([3, 1])
     with f1:
-        st.caption("Projet Python pour la Finance | Données : CoinGecko API | Moteur : Streamlit & Plotly")
+        st.caption("Python for Finance Project | Data: CoinGecko API | Engine: Streamlit & Plotly")
         st.caption("© 2025 - MEHAH Grégoire - PAGNIEZ David")
     with f2:
-        st.button("🔄 Rafraîchir les données")
-
-
-def render_quant_b():
-    st.header("💼 Module Portfolio")
-    st.info("🚧 Ce module est en cours de construction.")
+        st.button("🔄 Refresh Data Now")
 
 if __name__ == "__main__":
     main()
