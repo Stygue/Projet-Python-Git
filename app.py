@@ -35,11 +35,10 @@ def main():
     # Durée en secondes (5 minutes = 300)
     REFRESH_INTERVAL_SEC = 300 
     
-    # 1. Le mécanisme de refresh automatique (invisible mais actif)
+    # NOTE : On garde st_autorefresh comme sécurité, mais c'est le JS qui va probablement déclencher avant.
     st_autorefresh(interval=REFRESH_INTERVAL_SEC * 1000, key="datarefresh")
 
-        # 2. Le Chronomètre Visuel (JavaScript injecté)
-    # NOTE : Les doubles accolades {{ }} sont nécessaires pour le JS dans une f-string Python
+    # 2. Le Chronomètre Visuel (JavaScript injecté)
     timer_html = f"""
     <div style="
         border: 1px solid #444; 
@@ -61,6 +60,10 @@ def main():
           if(timeleft <= 0){{
             clearInterval(downloadTimer);
             document.getElementById("countdown").innerHTML = "Refreshing...";
+            
+            // --- LA LIGNE MAGIQUE QUI FORCE LE REFRESH ---
+            window.parent.location.reload(); 
+            
           }} else {{
             var minutes = Math.floor(timeleft / 60);
             var seconds = timeleft % 60;
@@ -71,7 +74,6 @@ def main():
         }}, 1000);
     </script>
     """
-
     
     # On l'affiche tout en haut de la sidebar
     st.sidebar.markdown("### ⏳ Status")
