@@ -7,7 +7,8 @@ This module handles data caching to optimize performance and reduce API calls.
 It acts as a wrapper around the raw API connector.
 """
 
-# Augmentation du TTL pour les données historiques à 10 minutes (600 secondes)
+# Increase TTL (Time To Live) for historical data to 10 minutes (600 seconds)
+# This prevents hitting API rate limits during frequent app usage.
 @st.cache_data(ttl=600) 
 def get_cached_historical_data(coin_id: str, days: str):
     """

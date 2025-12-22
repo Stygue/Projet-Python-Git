@@ -1,94 +1,105 @@
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_squared_error, accuracy_score
 from typing import Tuple, Dict, Any
 
 class AdvancedPricePredictor:
     """
-    Advanced ML model using Random Forest on engineered features.
-    Predicts Returns instead of Prices for statistical stationarity.
+    Prediction model using Random Forest.
+    We predict returns instead of raw prices to have more stable data.
     """
 
     def __init__(self, df: pd.DataFrame):
         self.df = df.copy()
-        # On utilise un Random Forest : robuste au sur-apprentissage et non-linéaire
+        # We use Random Forest because it handles complex relationships well
+        # and avoids "memorizing" the data (overfitting).
         self.model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)
         self.features = []
 
     def _feature_engineering(self) -> pd.DataFrame:
         """
-        Creates financial features: Lags, Rolling Means, Volatility, Momentum.
+        Creating indicators to help the model learn:
+        - Recent history (Lags)
+        - Volatility
+        - Trend (Moving Average)
         """
         data = self.df[['price']].copy()
         
-        # 1. Target: Log Returns (plus stables mathématiquement que les prix bruts)
+        # 1. Target: Log Returns
+        # We prefer predicting a percentage change rather than a raw price (e.g., $60k).
+        # This is mathematically easier for the model to handle.
         data['return'] = np.log(data['price'] / data['price'].shift(1))
         
-        # 2. Lagged Returns (Autocorrélation)
-        # Ce qu'il s'est passé hier, avant-hier, etc.
+        # 2. Lags (What happened before)
+        # The model looks at returns from 1 day ago, 2 days ago, etc.
         for lag in [1, 2, 3, 5]:
             col = f'lag_return_{lag}'
             data[col] = data['return'].shift(lag)
             self.features.append(col)
             
-        # 3. Rolling Volatility (Risque récent)
+        # 3. Volatility (Is the market moving a lot?)
+        # Standard deviation over the last 5 days.
         data['volatility_5d'] = data['return'].rolling(window=5).std()
         self.features.append('volatility_5d')
         
-        # 4. Trend / Momentum (Prix vs Moyenne Mobile)
+        # 4. Trend (Price vs Average)
+        # Are we above or below the recent average?
         data['sma_5'] = data['price'].rolling(window=5).mean()
         data['dist_to_sma'] = (data['price'] - data['sma_5']) / data['sma_5']
         self.features.append('dist_to_sma')
 
-        # Nettoyage des NaN générés par les lags/rolling
+        # We drop the first few rows that contain NaNs (due to previous calculations)
         return data.dropna()
 
     def train_and_analyze(self) -> Dict[str, Any]:
         """
-        Trains the model using TimeSeriesSplit (No Look-ahead bias).
-        Returns metrics and the trained model details.
+        Trains the model on a part of the data and tests it on the end.
+        Allows us to check if the model works well on data it has never seen.
         """
         data = self._feature_engineering()
         
         if len(data) < 30:
-            return {"error": "Not enough data (min 30 days required)"}
+            return {"error": "Not enough data (minimum 30 days required)"}
 
         X = data[self.features]
-        y = data['return'] # On prédit le rendement
+        y = data['return'] # We try to guess the return
 
-        # Split Train/Test (80/20) respectant la temporalité
+        # Chronological Split (Train 80% / Test 20%)
+        # IMPORTANT: We do not shuffle the data. We must respect the timeline 
+        # to avoid "cheating" by using the future to predict the past.
         split_idx = int(len(data) * 0.8)
         X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
         y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
-        # Entraînement
+        # Training the model
         self.model.fit(X_train, y_train)
         
-        # Prédictions sur le test set (Log Returns)
+        # Testing the model (Predictions)
         y_pred_log_returns = self.model.predict(X_test)
         
-        # --- Métriques ---
+        # --- Calculating Scores ---
+        
+        # RMSE: The average error of the model
         rmse = np.sqrt(mean_squared_error(y_test, y_pred_log_returns))
         
+        # Directional Accuracy: Did we correctly predict if it goes UP or DOWN?
         y_test_dir = np.sign(y_test)
         y_pred_dir = np.sign(y_pred_log_returns)
         dir_acc = accuracy_score(y_test_dir, y_pred_dir)
 
+        # Feature Importance: What helped the model the most?
         importances = dict(zip(self.features, self.model.feature_importances_))
         
-        # --- PREPARATION DONNEES GRAPHIQUE (NOUVEAU) ---
-        # Reconstruction des prix : Prix_T = Prix_(T-1) * exp(Return_T)
+        # --- Graph Preparation ---
+        # We must transform predicted returns back into "Real Prices" for display
         test_dates = y_test.index
         
-        # On récupère le prix de la veille pour chaque date de test
+        # Previous day's price (T-1)
         prev_prices = self.df['price'].shift(1).loc[test_dates]
         
-        # Calcul du prix prédit
+        # Formula: Predicted Price = Yesterday's Price * exp(Predicted Return)
         predicted_prices = prev_prices * np.exp(y_pred_log_returns)
-        
-        # Prix réels
         actual_prices = self.df.loc[test_dates, 'price']
         
         plotting_data = pd.DataFrame({
@@ -101,52 +112,33 @@ class AdvancedPricePredictor:
             "directional_accuracy": dir_acc,
             "feature_importance": importances,
             "test_data_size": len(y_test),
-            "plotting_data": plotting_data # <--- Données pour le graphique
+            "plotting_data": plotting_data
         }
 
 
     def predict_next_day(self) -> Tuple[float, float, float]:
         """
-        Re-trains on FULL data and predicts tomorrow's price.
-        Returns: (Predicted Price, Predicted Return %, Confidence/Directional Acc)
+        Re-trains the model on ALL available data to predict tomorrow.
+        Returns: (Predicted Price, % Change, Confidence Index)
         """
         data = self._feature_engineering()
         X = data[self.features]
         y = data['return']
         
-        # Entraînement sur TOUT l'historique disponible
+        # We re-train on the full history to be as up-to-date as possible
         self.model.fit(X, y)
         
-        # Construction des features pour "Demain" basé sur les dernières données connues
-        last_row = data.iloc[-1]
+        # To predict tomorrow, we use today's data (the last row)
+        last_features = X.iloc[[-1]] 
         
-        # On doit reconstruire l'input manuellement pour sklearn
-        # Attention : C'est ici que la logique doit être impeccable
-        input_features = []
-        
-        # Lags : On prend les returns récents
-        # lag_return_1 devient le return d'aujourd'hui, etc.
-        current_return = last_row['return']
-        
-        # Pour simplifier l'inférence sans reconstruire tout le dataset, 
-        # on prend la dernière ligne de X (qui correspond à "Aujourd'hui")
-        # Mais pour prédire demain, il faut shifter... 
-        # Pour ce projet scolaire, on va utiliser la dernière observation connue comme proxy immédiat
-        # ou mieux : utiliser la dernière ligne de X pour prédire Y (qui est le return de demain par rapport à auj)
-        # Dans notre feature engineering, Y est aligné sur T. X contient T-1, T-2.
-        # Donc si on passe les features d'AUJOURD'HUI (T), le modèle prédit le return de DEMAIN (T+1).
-        
-        last_features = X.iloc[[-1]] # Double crochet pour garder DataFrame 2D
-        
+        # The model predicts tomorrow's Log Return
         predicted_log_return = self.model.predict(last_features)[0]
         
-        # Conversion Log Return -> Prix
-        # Prix Demain = Prix Auj * exp(Log Return)
+        # Conversion to Price: Price Tomorrow = Price Today * exp(Predicted Return)
         last_price = self.df['price'].iloc[-1]
         predicted_price = last_price * np.exp(predicted_log_return)
         
-        # On récupère la précision directionnelle estimée lors du test précédent
-        # pour donner une idée de la fiabilité
+        # We use the accuracy calculated during the previous test as a "confidence index"
         metrics = self.train_and_analyze()
         confidence = metrics.get('directional_accuracy', 0.5)
         

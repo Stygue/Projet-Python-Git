@@ -1,6 +1,6 @@
 import requests
 import pandas as pd
-from typing import Optional, Tuple, List, Dict # Ajout de List et Dict
+from typing import Optional, Tuple, List, Dict
 import time
 
 class CryptoDataFetcher:
@@ -12,6 +12,9 @@ class CryptoDataFetcher:
 
     @staticmethod
     def get_historical_data(coin_id: str, days: str = "30") -> Optional[pd.DataFrame]:
+        """
+        Fetches historical market data (price vs timestamp) for a specific asset.
+        """
         url = f"{CryptoDataFetcher.BASE_URL}/coins/{coin_id}/market_chart"
         
         params = {
@@ -19,6 +22,7 @@ class CryptoDataFetcher:
             "days": days
         }
         
+        # Optimization: Use 'daily' interval for long durations to reduce data size
         if days.isdigit() and int(days) > 90:
             params['interval'] = 'daily'
 
@@ -29,21 +33,23 @@ class CryptoDataFetcher:
         try:
             response = requests.get(url, params=params, headers=headers, timeout=10)
             
+            # Handle Rate Limiting (CoinGecko free tier limitation)
             if response.status_code == 429:
-                print(f"⚠️ ERREUR API (429): Rate Limit Exceeded for {coin_id}. Waiting 10 seconds before returning None.")
+                print(f"⚠️ API ERROR (429): Rate Limit Exceeded for {coin_id}. Waiting 10 seconds before returning None.")
                 time.sleep(10) 
                 return None
             
             if response.status_code != 200:
-                print(f"⚠️ ERREUR API ({response.status_code}): {response.text}")
+                print(f"⚠️ API ERROR ({response.status_code}): {response.text}")
                 return None
             
             data = response.json()
             
             if 'prices' not in data:
-                print(f"⚠️ Pas de données 'prices' reçues pour {coin_id}")
+                print(f"⚠️ No 'prices' data received for {coin_id}")
                 return None
 
+            # Convert to DataFrame and process timestamps
             df = pd.DataFrame(data['prices'], columns=['timestamp', 'price'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
@@ -51,13 +57,14 @@ class CryptoDataFetcher:
             return df
 
         except Exception as e:
-            print(f"❌ Exception technique : {e}")
+            print(f"❌ Technical Exception: {e}")
             return None
 
     @staticmethod
     def get_current_price(coin_id: str) -> Tuple[float, float]:
         """
-        Récupère le prix actuel ET la variation 24h pour un seul actif (pour Quant A).
+        Fetches current price AND 24h change for a single asset.
+        Used primarily for the Single Asset module (Quant A).
         """
         url = f"{CryptoDataFetcher.BASE_URL}/simple/price"
         params = {
@@ -70,7 +77,7 @@ class CryptoDataFetcher:
             response = requests.get(url, params=params, timeout=5)
             
             if response.status_code == 429:
-                print(f"⚠️ ERREUR API (429) for current price {coin_id}. Returning 0.0, 0.0.")
+                print(f"⚠️ API ERROR (429) for current price {coin_id}. Returning 0.0, 0.0.")
                 return 0.0, 0.0
             
             if response.status_code == 200:
@@ -86,8 +93,9 @@ class CryptoDataFetcher:
     @staticmethod
     def get_current_prices_batch(coin_ids: List[str]) -> Dict[str, Tuple[float, float]]:
         """
-        RÉCUPÈRE LE PRIX ACTUEL POUR PLUSIEURS ACTIFS EN UNE SEULE REQUÊTE.
-        Retourne : {'bitcoin': (prix, variation_24h), ...}
+        Fetches current prices for multiple assets in a single request.
+        Optimized to save API calls.
+        Returns: {'bitcoin': (price, 24h_change), ...}
         """
         if not coin_ids:
             return {}
@@ -105,7 +113,7 @@ class CryptoDataFetcher:
             response = requests.get(url, params=params, timeout=5)
             
             if response.status_code == 429:
-                print(f"⚠️ ERREUR API (429) for price batch. Returning empty data.")
+                print(f"⚠️ API ERROR (429) for price batch. Returning empty data.")
                 return {}
 
             if response.status_code == 200:
@@ -116,7 +124,7 @@ class CryptoDataFetcher:
                     change = coin_data.get('usd_24h_change', 0.0)
                     results[coin_id] = (price, change)
         except Exception as e:
-            print(f"❌ Exception technique lors du batch price fetch: {e}")
+            print(f"❌ Technical Exception during batch price fetch: {e}")
             return {}
             
         return results
