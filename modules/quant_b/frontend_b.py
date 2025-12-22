@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
-from modules.quant_b.portfolio_logic import (
+from quant_b.portfolio_logic import (
     load_multi_asset_data,
     calculate_portfolio_metrics,
     calculate_portfolio_performance_series,

@@ -10,7 +10,7 @@ from data_handling.caching import get_cached_historical_data, get_cached_current
 # Import logic modules
 from quant_a.strategies import apply_buy_and_hold, apply_sma_crossover, apply_rsi_strategy 
 from quant_a.metrics import get_performance_summary
-from quant_a.prediction import PricePredictor
+from quant_a.prediction import AdvancedPricePredictor
 
 def render_quant_a_dashboard():
     """
@@ -152,22 +152,116 @@ def render_quant_a_dashboard():
     c3.metric("Sharpe Ratio", f"{metrics['Sharpe Ratio']:.2f}")
     c4.metric("Max Drawdown", f"{metrics['Max Drawdown']:.2%}")
 
-    # --- 6. Bonus: ML Prediction ---
+        # --- 6. Advanced AI Prediction ---
     st.markdown("---")
-    st.subheader("🔮 AI Price Prediction (Bonus)")
+    st.subheader("🧠 Advanced AI Forecasting (Random Forest)")
+    st.caption("Model: Random Forest Regressor | Target: Log-Returns | Features: Lags, Volatility, Momentum")
     
-    if st.button("Predict Next Day Price"):
-        predictor = PricePredictor(df)
-        predicted_price, score = predictor.train_and_predict()
-        
-        if predicted_price:
-            col_pred1, col_pred2 = st.columns(2)
-            col_pred1.metric("Predicted Price (Tomorrow)", f"${predicted_price:,.2f}")
-            col_pred2.metric("Model Confidence (R²)", f"{score:.2f}")
+    if st.button("Run AI Analysis"):
+        with st.spinner("Training Random Forest model & Engineering features..."):
+            # Import local pour être sûr d'avoir la bonne classe
+            from quant_a.prediction import AdvancedPricePredictor
             
-            if score < 0.5:
-                st.warning("Warning: Model confidence is low. Market is volatile.")
+            predictor = AdvancedPricePredictor(df)
+            
+            # 1. Analyse et Métriques
+            metrics = predictor.train_and_analyze()
+            
+            if "error" in metrics:
+                st.warning(metrics["error"])
             else:
-                st.success("Model fit is reasonable.")
-        else:
-            st.warning("Not enough data to make a prediction.")
+                # 2. Prédiction Future
+                pred_price, pred_return, confidence = predictor.predict_next_day()
+                
+                # --- A. Affichage des Résultats Clés ---
+                st.markdown("#### 🔮 Forecast for Tomorrow")
+                col_p1, col_p2, col_p3 = st.columns(3)
+                
+                current_price = df['price'].iloc[-1]
+                delta_color = "normal"
+                if pred_price > current_price: delta_color = "inverse" # Vert si hausse
+                
+                col_p1.metric(
+                    "Predicted Price", 
+                    f"${pred_price:,.2f}", 
+                    delta=f"{pred_return:.2%}",
+                    delta_color=delta_color
+                )
+                
+                col_p2.metric(
+                    "Directional Accuracy", 
+                    f"{metrics['directional_accuracy']:.1%}",
+                    help="Percentage of time the model correctly predicted the Up/Down movement on test data."
+                )
+                
+                col_p3.metric(
+                    "Model RMSE", 
+                    f"{metrics['rmse']:.4f}",
+                    help="Root Mean Squared Error on Log-Returns."
+                )
+
+                st.markdown("---")
+
+                # --- B. Graphique Actual vs Predicted (NOUVEAU) ---
+                st.markdown("#### 📉 Backtest Analysis: Actual vs. Predicted")
+                st.caption("Visualizing model performance on unseen test data (Last 20% of history).")
+                
+                plot_data = metrics['plotting_data']
+                
+                fig_pred = go.Figure()
+                
+                # Courbe Réelle
+                fig_pred.add_trace(go.Scatter(
+                    x=plot_data.index, 
+                    y=plot_data['Actual'],
+                    mode='lines',
+                    name='Actual Price',
+                    line=dict(color='#1f77b4', width=2)
+                ))
+                
+                # Courbe Prédite
+                fig_pred.add_trace(go.Scatter(
+                    x=plot_data.index, 
+                    y=plot_data['Predicted'],
+                    mode='lines',
+                    name='Predicted (AI)',
+                    line=dict(color='#ff7f0e', width=2, dash='dot')
+                ))
+                
+                fig_pred.update_layout(
+                    title="One-Step Ahead Prediction Accuracy",
+                    xaxis_title="Date",
+                    yaxis_title="Price (USD)",
+                    height=400,
+                    hovermode="x unified",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                
+                st.plotly_chart(fig_pred, use_container_width=True)
+
+                # --- C. Feature Importance ---
+                st.markdown("#### 🧐 What drives the market?")
+                st.caption("Which features influenced the model's decision the most?")
+                
+                importances = metrics['feature_importance']
+                df_imp = pd.DataFrame(list(importances.items()), columns=['Feature', 'Importance'])
+                df_imp = df_imp.sort_values(by='Importance', ascending=True)
+                
+                fig_imp = go.Figure(go.Bar(
+                    x=df_imp['Importance'],
+                    y=df_imp['Feature'],
+                    orientation='h',
+                    marker=dict(color='rgba(50, 171, 96, 0.6)', line=dict(color='rgba(50, 171, 96, 1.0)', width=1))
+                ))
+                fig_imp.update_layout(
+                    height=300, 
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    xaxis_title="Relative Importance"
+                )
+                st.plotly_chart(fig_imp, use_container_width=True)
+                
+                st.info(
+                    "💡 **Analyst Note:** Unlike simple Linear Regression, this Random Forest model trains on **Returns** (Stationary data) "
+                    "and uses technical indicators (Volatility, SMA distance). The 'Directional Accuracy' is the most reliable metric for trading."
+                )
+
