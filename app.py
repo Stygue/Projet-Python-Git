@@ -4,6 +4,7 @@ import os
 from streamlit_autorefresh import st_autorefresh
 # AJOUT : Importation de get_cached_current_prices_batch
 from data_handling.caching import get_cached_current_price, get_cached_current_prices_batch 
+from streamlit.components.v1 import html
 
 # --- 1. THE PATCH (Essential) ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -30,9 +31,52 @@ st.set_page_config(
 def main():
     st.sidebar.title("🧭 Navigation")
 
-    # Refresh every 5 minutes (300000 milliseconds)
-    st_autorefresh(interval=300000, key="datarefresh")
+    # --- GESTION DU REFRESH & CHRONO ---
+    # Durée en secondes (5 minutes = 300)
+    REFRESH_INTERVAL_SEC = 300 
+    
+    # 1. Le mécanisme de refresh automatique (invisible mais actif)
+    st_autorefresh(interval=REFRESH_INTERVAL_SEC * 1000, key="datarefresh")
 
+        # 2. Le Chronomètre Visuel (JavaScript injecté)
+    # NOTE : Les doubles accolades {{ }} sont nécessaires pour le JS dans une f-string Python
+    timer_html = f"""
+    <div style="
+        border: 1px solid #444; 
+        border-radius: 5px; 
+        padding: 10px; 
+        text-align: center; 
+        background-color: #0e1117; 
+        color: #fafafa; 
+        font-family: sans-serif;
+        margin-bottom: 20px;">
+        <span style="font-size: 0.9em; color: #aaa;">Prochain update :</span>
+        <br>
+        <span id="countdown" style="font-size: 1.5em; font-weight: bold;">--:--</span>
+    </div>
+
+    <script>
+        var timeleft = {REFRESH_INTERVAL_SEC};
+        var downloadTimer = setInterval(function(){{
+          if(timeleft <= 0){{
+            clearInterval(downloadTimer);
+            document.getElementById("countdown").innerHTML = "Refreshing...";
+          }} else {{
+            var minutes = Math.floor(timeleft / 60);
+            var seconds = timeleft % 60;
+            seconds = seconds < 10 ? '0' + seconds : seconds;
+            document.getElementById("countdown").innerHTML = minutes + ":" + seconds;
+          }}
+          timeleft -= 1;
+        }}, 1000);
+    </script>
+    """
+
+    
+    # On l'affiche tout en haut de la sidebar
+    st.sidebar.markdown("### ⏳ Status")
+    with st.sidebar:
+        html(timer_html, height=85)
     page = st.sidebar.radio(
         "Go to:",
         ["Home", "Quant A: Crypto Analysis", "Quant B: Portfolio"]
@@ -139,7 +183,12 @@ def render_home():
         st.caption("Python for Finance Project | Data: CoinGecko API | Engine: Streamlit & Plotly")
         st.caption("© 2025 - MEHAH Grégoire - PAGNIEZ David")
     with f2:
-        st.button("🔄 Refresh Data Now")
+        # On stocke le résultat du clic dans une variable
+        if st.button("🔄 Refresh Data Now"):
+            # 1. On vide TOUT le cache de données
+            st.cache_data.clear()
+            # 2. On force le rechargement immédiat de la page
+            st.rerun()
 
 if __name__ == "__main__":
     main()
